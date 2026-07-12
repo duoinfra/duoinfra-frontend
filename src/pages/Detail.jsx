@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom'
 import styles from './Detail.module.css'
 
 const MOCK = {
+  '-1': { id: '-1', name: 'ubuntu-demo', status: 'running', cpu: 2, memory: 2048, ip: '220.117.221.158', port: 10001, sshUser: 'root', containerId: 'demo1234abcd5678', createdAt: '2025-07-12 10:00' },
   '1': { id: '1', name: 'ubuntu-01', status: 'running', cpu: 2, memory: 2048, ip: '220.117.221.158', port: 10001, sshUser: 'root', containerId: 'abc123def456', createdAt: '2025-07-01 14:23' },
   '2': { id: '2', name: 'ubuntu-02', status: 'running', cpu: 1, memory: 512, ip: '220.117.221.158', port: 10002, sshUser: 'root', containerId: 'bcd234ef5678', createdAt: '2025-07-03 09:10' },
   '3': { id: '3', name: 'ubuntu-03', status: 'stopped', cpu: 4, memory: 4096, ip: '220.117.221.158', port: 10003, sshUser: 'root', containerId: 'cde345fg6789', createdAt: '2025-06-28 17:45' },
