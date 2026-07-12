@@ -1,4 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import styles from './Detail.module.css'
 
 const MOCK = {
@@ -8,13 +9,68 @@ const MOCK = {
   '3': { id: '3', name: 'ubuntu-03', status: 'stopped', cpu: 4, memory: 4096, ip: '220.117.221.158', port: 10003, sshUser: 'root', containerId: 'cde345fg6789', createdAt: '2025-06-28 17:45' },
 }
 
+function useMetrics(active) {
+  const [metrics, setMetrics] = useState({
+    cpu: 42,
+    memory: 67,
+    networkIn: 12.4,
+    networkOut: 5.8,
+    history: Array.from({ length: 20 }, (_, i) => ({
+      cpu: 30 + Math.random() * 30,
+      mem: 60 + Math.random() * 15,
+    })),
+  })
+
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => {
+      setMetrics(prev => {
+        const newCpu = Math.max(5, Math.min(95, prev.cpu + (Math.random() - 0.5) * 10))
+        const newMem = Math.max(20, Math.min(90, prev.memory + (Math.random() - 0.5) * 4))
+        return {
+          cpu: Math.round(newCpu),
+          memory: Math.round(newMem),
+          networkIn: +(Math.random() * 20).toFixed(1),
+          networkOut: +(Math.random() * 10).toFixed(1),
+          history: [...prev.history.slice(1), { cpu: newCpu, mem: newMem }],
+        }
+      })
+    }, 1500)
+    return () => clearInterval(id)
+  }, [active])
+
+  return metrics
+}
+
+function Sparkline({ data, color, height = 60 }) {
+  const w = 300, h = height
+  const max = Math.max(...data, 1)
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w
+    const y = h - (v / 100) * h
+    return `${x},${y}`
+  }).join(' ')
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className={styles.sparkline} preserveAspectRatio="none">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+      <polyline
+        points={`0,${h} ${pts} ${w},${h}`}
+        fill={color}
+        fillOpacity="0.1"
+        stroke="none"
+      />
+    </svg>
+  )
+}
+
 export default function Detail() {
   const { id } = useParams()
   const server = MOCK[id]
+  const isRunning = server?.status === 'running'
+  const metrics = useMetrics(isRunning)
 
   if (!server) return <div className={styles.error}>서버를 찾을 수 없습니다.</div>
-
-  const isRunning = server.status === 'running'
 
   return (
     <div className={styles.layout}>
@@ -32,6 +88,44 @@ export default function Detail() {
             </span>
           </div>
         </header>
+
+        {/* 실시간 메트릭 */}
+        {isRunning && (
+          <section className={styles.metricsSection}>
+            <div className={styles.metricsHeader}>
+              <h2 className={styles.cardTitle}>실시간 메트릭</h2>
+              <span className={styles.liveTag}>● LIVE</span>
+            </div>
+            <div className={styles.metricsGrid}>
+              <MetricCard
+                label="CPU 사용률"
+                value={`${metrics.cpu}%`}
+                color="#4f6ef7"
+                warn={metrics.cpu > 80}
+                sparkData={metrics.history.map(h => h.cpu)}
+              />
+              <MetricCard
+                label="메모리 사용률"
+                value={`${metrics.memory}%`}
+                color="#f59e0b"
+                warn={metrics.memory > 85}
+                sparkData={metrics.history.map(h => h.mem)}
+              />
+              <MetricCard
+                label="네트워크 인바운드"
+                value={`${metrics.networkIn} MB/s`}
+                color="#10b981"
+                noGraph
+              />
+              <MetricCard
+                label="네트워크 아웃바운드"
+                value={`${metrics.networkOut} MB/s`}
+                color="#8b5cf6"
+                noGraph
+              />
+            </div>
+          </section>
+        )}
 
         <div className={styles.grid}>
           <InfoCard title="기본 정보">
@@ -58,6 +152,20 @@ export default function Detail() {
           </InfoCard>
         </div>
       </main>
+    </div>
+  )
+}
+
+function MetricCard({ label, value, color, warn, sparkData, noGraph }) {
+  return (
+    <div className={`${styles.metricCard} ${warn ? styles.metricWarn : ''}`}>
+      <div className={styles.metricTop}>
+        <span className={styles.metricLabel}>{label}</span>
+        <span className={styles.metricValue} style={{ color }}>{value}</span>
+      </div>
+      {!noGraph && sparkData && (
+        <Sparkline data={sparkData} color={color} />
+      )}
     </div>
   )
 }
