@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import styles from './Create.module.css'
+import { createServer } from '../api'
 
 const CPU_OPTIONS = [1, 2, 4, 8]
 const MEMORY_OPTIONS = [512, 1024, 2048, 4096, 8192]
@@ -10,22 +11,17 @@ export default function Create() {
   const [cpu, setCpu] = useState(1)
   const [memory, setMemory] = useState(512)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
     setLoading(true)
     try {
-      const res = await fetch('/api/containers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpu, memory }),
-      })
-      if (res.ok) {
-        navigate('/overview')
-      }
-    } catch {
-      // demo: just navigate
-      navigate('/overview')
+      const server = await createServer(cpu, memory)
+      navigate(`/servers/${server.id}`)
+    } catch (err) {
+      setError(err.message || '서버 생성에 실패했습니다.')
     } finally {
       setLoading(false)
     }
@@ -41,11 +37,17 @@ export default function Create() {
 
         <h1 className={styles.pageTitle}>새 서버 생성</h1>
 
+        {error && (
+          <p style={{ color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 4, padding: '10px 14px', marginBottom: 20, fontSize: 13 }}>
+            {error}
+          </p>
+        )}
+
         <form className={styles.form} onSubmit={handleSubmit}>
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>이미지</h2>
             <div className={styles.imageOption}>
-              <div className={styles.imageCard + ' ' + styles.selected}>
+              <div className={`${styles.imageCard} ${styles.selected}`}>
                 <span className={styles.imageName}>Ubuntu 22.04 LTS</span>
                 <span className={styles.imageTag}>권장</span>
               </div>
@@ -89,7 +91,7 @@ export default function Create() {
           </div>
 
           <button className={styles.submitBtn} type="submit" disabled={loading}>
-            {loading ? '생성 중...' : '서버 생성'}
+            {loading ? '생성 중... (시간이 걸릴 수 있습니다)' : '서버 생성'}
           </button>
         </form>
       </main>

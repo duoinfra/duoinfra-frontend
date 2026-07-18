@@ -1,46 +1,7 @@
-import { useParams, Link } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
 import styles from './Detail.module.css'
-
-const MOCK = {
-  '-1': { id: '-1', name: 'ubuntu-demo', status: 'running', cpu: 2, memory: 2048, ip: '220.117.221.158', port: 10001, sshUser: 'root', containerId: 'demo1234abcd5678', createdAt: '2025-07-12 10:00' },
-  '1': { id: '1', name: 'ubuntu-01', status: 'running', cpu: 2, memory: 2048, ip: '220.117.221.158', port: 10001, sshUser: 'root', containerId: 'abc123def456', createdAt: '2025-07-01 14:23' },
-  '2': { id: '2', name: 'ubuntu-02', status: 'running', cpu: 1, memory: 512, ip: '220.117.221.158', port: 10002, sshUser: 'root', containerId: 'bcd234ef5678', createdAt: '2025-07-03 09:10' },
-  '3': { id: '3', name: 'ubuntu-03', status: 'stopped', cpu: 4, memory: 4096, ip: '220.117.221.158', port: 10003, sshUser: 'root', containerId: 'cde345fg6789', createdAt: '2025-06-28 17:45' },
-}
-
-function useMetrics(active) {
-  const [metrics, setMetrics] = useState({
-    cpu: 42,
-    memory: 67,
-    networkIn: 12.4,
-    networkOut: 5.8,
-    history: Array.from({ length: 20 }, (_, i) => ({
-      cpu: 30 + Math.random() * 30,
-      mem: 60 + Math.random() * 15,
-    })),
-  })
-
-  useEffect(() => {
-    if (!active) return
-    const id = setInterval(() => {
-      setMetrics(prev => {
-        const newCpu = Math.max(5, Math.min(95, prev.cpu + (Math.random() - 0.5) * 10))
-        const newMem = Math.max(20, Math.min(90, prev.memory + (Math.random() - 0.5) * 4))
-        return {
-          cpu: Math.round(newCpu),
-          memory: Math.round(newMem),
-          networkIn: +(Math.random() * 20).toFixed(1),
-          networkOut: +(Math.random() * 10).toFixed(1),
-          history: [...prev.history.slice(1), { cpu: newCpu, mem: newMem }],
-        }
-      })
-    }, 1500)
-    return () => clearInterval(id)
-  }, [active])
-
-  return metrics
-}
+import { getServer, getMetrics, deleteServer } from '../api'
 
 function Sparkline({ data, color, height = 60 }) {
   const w = 300, h = height
@@ -66,11 +27,52 @@ function Sparkline({ data, color, height = 60 }) {
 
 export default function Detail() {
   const { id } = useParams()
-  const server = MOCK[id]
-  const isRunning = server?.status === 'running'
-  const metrics = useMetrics(isRunning)
+  const navigate = useNavigate()
+  const [server, setServer] = useState(null)
+  const [metrics, setMetrics] = useState(null)
+  const [cpuHistory, setCpuHistory] = useState(Array(20).fill(0))
+  const [memHistory, setMemHistory] = useState(Array(20).fill(0))
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const intervalRef = useRef(null)
 
-  if (!server) return <div className={styles.error}>서버를 찾을 수 없습니다.</div>
+  useEffect(() => {
+    getServer(id)
+      .then(setServer)
+      .catch(() => setError('서버를 찾을 수 없습니다.'))
+      .finally(() => setLoading(false))
+  }, [id])
+
+  useEffect(() => {
+    if (!server || server.status !== 'RUNNING') return
+
+    const fetchMetrics = () => {
+      getMetrics(id).then(m => {
+        setMetrics(m)
+        setCpuHistory(prev => [...prev.slice(1), m.cpu])
+        setMemHistory(prev => [...prev.slice(1), m.memory])
+      }).catch(() => {})
+    }
+
+    fetchMetrics()
+    intervalRef.current = setInterval(fetchMetrics, 5000)
+    return () => clearInterval(intervalRef.current)
+  }, [server, id])
+
+  const handleDelete = async () => {
+    if (!confirm('서버를 삭제하시겠습니까?')) return
+    try {
+      await deleteServer(id)
+      navigate('/overview')
+    } catch (err) {
+      alert(err.message || '삭제에 실패했습니다.')
+    }
+  }
+
+  if (loading) return <div style={{ padding: 40 }}>불러오는 중...</div>
+  if (error) return <div className={styles.error}>{error}</div>
+
+  const isRunning = server.status === 'RUNNING'
 
   return (
     <div className={styles.layout}>
@@ -82,15 +84,20 @@ export default function Detail() {
 
         <header className={styles.header}>
           <div>
-            <h1 className={styles.name}>{server.name}</h1>
+            <h1 className={styles.name}>{server.containerId.slice(0, 12)}</h1>
             <span className={styles.badge} style={{ background: isRunning ? '#16a34a' : '#6b7280' }}>
               {isRunning ? '실행 중' : '중지됨'}
             </span>
           </div>
+          <button
+            onClick={handleDelete}
+            style={{ padding: '8px 16px', background: '#dc2626', color: '#fff', borderRadius: 4, fontSize: 13 }}
+          >
+            서버 삭제
+          </button>
         </header>
 
-        {/* 실시간 메트릭 */}
-        {isRunning && (
+        {isRunning && metrics && (
           <section className={styles.metricsSection}>
             <div className={styles.metricsHeader}>
               <h2 className={styles.cardTitle}>실시간 메트릭</h2>
@@ -99,27 +106,27 @@ export default function Detail() {
             <div className={styles.metricsGrid}>
               <MetricCard
                 label="CPU 사용률"
-                value={`${metrics.cpu}%`}
+                value={`${metrics.cpu.toFixed(1)}%`}
                 color="#4f6ef7"
                 warn={metrics.cpu > 80}
-                sparkData={metrics.history.map(h => h.cpu)}
+                sparkData={cpuHistory}
               />
               <MetricCard
                 label="메모리 사용률"
-                value={`${metrics.memory}%`}
+                value={`${metrics.memory.toFixed(1)}%`}
                 color="#f59e0b"
                 warn={metrics.memory > 85}
-                sparkData={metrics.history.map(h => h.mem)}
+                sparkData={memHistory}
               />
               <MetricCard
                 label="네트워크 인바운드"
-                value={`${metrics.networkIn} MB/s`}
+                value={`${metrics.networkIn.toFixed(2)} MB`}
                 color="#10b981"
                 noGraph
               />
               <MetricCard
                 label="네트워크 아웃바운드"
-                value={`${metrics.networkOut} MB/s`}
+                value={`${metrics.networkOut.toFixed(2)} MB`}
                 color="#8b5cf6"
                 noGraph
               />
@@ -130,7 +137,7 @@ export default function Detail() {
         <div className={styles.grid}>
           <InfoCard title="기본 정보">
             <Row label="컨테이너 ID" value={server.containerId} mono />
-            <Row label="생성일" value={server.createdAt} />
+            <Row label="생성일" value={new Date(server.createdAt).toLocaleString('ko-KR')} />
             <Row label="상태" value={isRunning ? '실행 중' : '중지됨'} />
           </InfoCard>
 
@@ -140,13 +147,14 @@ export default function Detail() {
           </InfoCard>
 
           <InfoCard title="SSH 접속 정보">
-            <Row label="호스트" value={server.ip} mono />
-            <Row label="포트" value={String(server.port)} mono />
-            <Row label="사용자" value={server.sshUser} mono />
+            <Row label="호스트" value={server.host} mono />
+            <Row label="포트" value={String(server.sshPort)} mono />
+            <Row label="사용자" value={server.sshUsername} mono />
+            <Row label="비밀번호" value={server.sshPassword} mono />
             <div className={styles.sshCmd}>
               <span className={styles.sshLabel}>접속 명령어</span>
               <code className={styles.code}>
-                ssh -p {server.port} {server.sshUser}@{server.ip}
+                ssh -p {server.sshPort} {server.sshUsername}@{server.host}
               </code>
             </div>
           </InfoCard>
